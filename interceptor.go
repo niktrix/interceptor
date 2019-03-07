@@ -7,6 +7,7 @@ import (
 
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
+	"github.com/go-redis/redis"
 	"github.com/mholt/caddy"
 	"github.com/miekg/dns"
 )
@@ -16,19 +17,14 @@ func init() {
 }
 
 type Interceptor struct {
-	Next plugin.Handler
+	Next  plugin.Handler
+	Redis *redis.Client
 }
 
 func setup(c *caddy.Controller) error {
-	fmt.Println("Setting up interceptor")
 	var ip, port string
-
 	for c.Next() {
 		for c.NextBlock() {
-			fmt.Println("ServerBlockKeys ", c.ServerBlockKeys)
-			fmt.Println("Args ", c.Args())
-			fmt.Println("c.Val() before switch ", c.Val())
-
 			switch c.Val() {
 			case "ip":
 				if !c.NextArg() {
@@ -45,11 +41,13 @@ func setup(c *caddy.Controller) error {
 		}
 	}
 
-	fmt.Println("ip,", ip)
-	fmt.Println("port,", port)
+	redis := redis.NewClient(&redis.Options{
+		Addr: ip + ":" + port,
+		DB:   0,
+	})
 
 	dnsserver.GetConfig(c).AddPlugin(func(next plugin.Handler) plugin.Handler {
-		return Interceptor{Next: next}
+		return Interceptor{Next: next, Redis: redis}
 	})
 	return nil
 }
@@ -58,14 +56,12 @@ func setup(c *caddy.Controller) error {
 func (e Interceptor) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	pw := NewResponsePrinter(w)
 
-	fmt.Println(r.Question[0].Name)
-
-	//get CNAME
-
+	remoteAddr := strings.Split(w.RemoteAddr().String(), ":")
 	result := strings.Split(r.Question[0].Name, ".")
 	fmt.Println(len(result))
-	if len(result) > 3 {
+	if len(result) >= 4 {
 		fmt.Println(result[0])
+		e.Redis.Set(result[0], remoteAddr[0], 0)
 	}
 
 	return plugin.NextOrFailure(e.Name(), e.Next, ctx, pw, r)
