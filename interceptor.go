@@ -58,10 +58,9 @@ func (e Interceptor) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.
 
 	remoteAddr := strings.Split(w.RemoteAddr().String(), ":")
 	result := strings.Split(r.Question[0].Name, ".")
-	fmt.Println(len(result))
 	if len(result) >= 4 {
 		fmt.Println(result[0])
-		e.Redis.Set(result[0], remoteAddr[0], 0)
+		e.Redis.Set(result[0]+":"+remoteAddr[0], remoteAddr[0], 0)
 	}
 
 	return plugin.NextOrFailure(e.Name(), e.Next, ctx, pw, r)
